@@ -35,7 +35,7 @@ compatibility_date = "2024-09-23"
 Initialize Senzor in the global scope and wrap your `fetch` handler.
 
 ```typescript
-import Senzor from "@senzops/apm-worker";
+import { Senzor } from "@senzops/apm-worker";
 
 Senzor.init({
   apiKey: "sz_apm_...",
@@ -59,7 +59,7 @@ For **Nitro** (standalone) or **Nuxt**, use a server plugin to instrument the en
 Create `server/plugins/senzor.ts`:
 
 ```typescript
-import Senzor from "@senzops/apm-worker";
+import { Senzor } from "@senzops/apm-worker";
 
 export default defineNitroPlugin((nitroApp) => {
   // 1. Initialize
