@@ -1,8 +1,6 @@
 export interface SenzorOptions {
   apiKey: string;
   endpoint?: string;
-  batchSize?: number;
-  flushInterval?: number; // ms
   debug?: boolean;
 }
 
@@ -15,7 +13,7 @@ export interface Span {
   meta?: Record<string, any>;
 }
 
-export interface Trace {
+export interface TraceData {
   traceId: string;
   method: string;
   route: string; // Normalized
@@ -28,10 +26,19 @@ export interface Trace {
   spans: Span[];
 }
 
-// Internal interface for an active trace object
-export interface ActiveTrace {
-  id: string;
-  startTime: number;
-  data: Partial<Trace>;
-  spans: Span[];
+export interface TraceController {
+  /**
+   * Starts a new span.
+   */
+  startSpan(name: string, type?: 'db' | 'http' | 'function' | 'custom'): { end: (meta?: any, status?: number) => void };
+
+  /**
+   * Adds an error to the trace.
+   */
+  captureException(error: Error | any): void;
+
+  /**
+   * The trace ID for the current session
+   */
+  readonly traceId: string;
 }

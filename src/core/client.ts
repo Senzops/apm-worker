@@ -1,13 +1,10 @@
 import { Transport } from './transport';
-import { Context } from './context';
-import { SenzorOptions, ActiveTrace } from './types';
-import { randomUUID } from 'crypto';
-import { instrumentHttp, instrumentFetch } from '../instrumentation/http'; // Import both
+import { SenzorOptions, TraceData, Span, TraceController } from './types';
+import { enableFetchInstrumentation } from '../instrumentation/fetch';
 
 export class SenzorClient {
   private transport: Transport | null = null;
   private options: SenzorOptions | null = null;
-  private isInstrumented = false;
 
   public init(options: SenzorOptions) {
     if (!options.apiKey) {
@@ -15,50 +12,121 @@ export class SenzorClient {
       return;
     }
     this.options = options;
-    const endpoint = options.endpoint || 'https://api.senzor.dev/api/ingest/apm';
-    const debug = options.debug || false;
+    this.transport = new Transport(options);
 
-    this.transport = new Transport({
-      ...options,
-      endpoint
-    });
-
-    // --- ENABLE AUTO INSTRUMENTATION ---
-    if (!this.isInstrumented) {
-      try { instrumentHttp(endpoint, debug); } catch (e) { }
-      try { instrumentFetch(endpoint, debug); } catch (e) { } // NEW: Fetch Support
-
-      this.isInstrumented = true;
-      if (debug) console.log('[Senzor] Auto-instrumentation enabled (HTTP, Fetch)');
+    // Auto-instrument global fetch
+    try {
+      enableFetchInstrumentation();
+    } catch (e) {
+      if (options.debug) console.warn('[Senzor] Failed to instrument fetch:', e);
     }
+
+    if (options.debug) console.log('[Senzor] Initialized for Serverless');
   }
 
-  // ... (Rest of file same as before: startTrace, endTrace, track, etc.) ...
-  public startTrace<T>(data: Partial<ActiveTrace['data']>, next: () => T): T {
-    if (!this.transport) return next();
-    const trace: ActiveTrace = { id: randomUUID(), startTime: performance.now(), data: data, spans: [] };
-    return Context.run(trace, next);
+  /**
+   * Creates a detached trace session.
+   */
+  public createTrace(data: Partial<TraceData>): { controller: TraceController, end: (status: number, route?: string) => void, flush: () => Promise<void> } {
+    if (!this.transport) {
+      // Return dummy if not initialized
+      return {
+        controller: {
+          startSpan: () => ({ end: () => { } }),
+          captureException: () => { },
+          traceId: '00000000000000000000000000000000'
+        },
+        end: () => { },
+        flush: async () => { }
+      };
+    }
+
+    const traceId = crypto.randomUUID().replace(/-/g, ''); // 32 hex chars usually
+    const startTime = performance.now();
+    const spans: Span[] = [];
+
+    const startSpan = (name: string, type: 'db' | 'http' | 'function' | 'custom' = 'custom') => {
+      const spanStartAbs = performance.now();
+      const startRel = spanStartAbs - startTime;
+      return {
+        end: (meta?: any, status?: number) => {
+          spans.push({
+            name,
+            type,
+            startTime: startRel, // Relative to trace start
+            duration: performance.now() - spanStartAbs,
+            status,
+            meta
+          });
+        }
+      };
+    };
+
+    const controller: TraceController = {
+      traceId,
+      startSpan,
+      captureException: (err: any) => {
+        spans.push({
+          name: 'exception',
+          type: 'custom',
+          startTime: performance.now() - startTime,
+          duration: 0,
+          status: 500,
+          meta: { error: err.message || String(err), stack: err.stack }
+        });
+      }
+    };
+
+    const end = (status: number, route: string = 'UNKNOWN') => {
+      const duration = performance.now() - startTime;
+      const payload: TraceData = {
+        traceId,
+        method: data.method || 'GET',
+        route,
+        path: data.path || '/',
+        status,
+        duration,
+        ip: data.ip,
+        userAgent: data.userAgent,
+        timestamp: new Date().toISOString(),
+        spans
+      };
+      this.transport?.add(payload);
+    };
+
+    const flush = async () => {
+      await this.transport?.flush();
+    };
+
+    return { controller, end, flush };
   }
 
-  public endTrace(status: number, extraData: any = {}) {
-    const trace = Context.current();
-    if (!trace || !this.transport) return;
-    const duration = performance.now() - trace.startTime;
-    const payload = { traceId: trace.id, ...trace.data, ...extraData, status, duration, spans: trace.spans, timestamp: new Date().toISOString() };
+  /**
+   * Track a single request trace immediately.
+   */
+  public track(data: Partial<TraceData> & { status: number, duration: number, route: string }) {
+    if (!this.transport) return;
+
+    const payload: TraceData = {
+      traceId: crypto.randomUUID(),
+      method: data.method || 'GET',
+      route: data.route,
+      path: data.path || '/',
+      status: data.status,
+      duration: data.duration,
+      ip: data.ip,
+      userAgent: data.userAgent,
+      timestamp: new Date().toISOString(),
+      spans: data.spans || []
+    };
+
     this.transport.add(payload);
+    this.transport.flush().catch(() => { });
   }
 
-  public track(data: any) { this.transport?.add({ traceId: randomUUID(), ...data, spans: [], timestamp: new Date().toISOString() }); }
-
-  public startSpan(name: string, type: 'db' | 'http' | 'function' | 'custom' = 'custom') {
-    const trace = Context.current();
-    if (!trace) return { end: () => { } };
-    const startTime = performance.now() - trace.startTime;
-    const spanStartAbs = performance.now();
-    return { end: (meta?: any, status?: number) => { Context.addSpan({ name, type, startTime, duration: performance.now() - spanStartAbs, status, meta }); } };
-  }
-
-  public async flush() { if (this.transport) await this.transport.flush(); }
+  // Stubs for legacy Node support
+  public startTrace<T>(data: Partial<TraceData>, callback: () => T): T { return callback(); }
+  public endTrace(status: number, data?: { route?: string }) { }
 }
 
 export const client = new SenzorClient();

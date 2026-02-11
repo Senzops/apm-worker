@@ -1,7 +1,7 @@
 {
-  "name": "@senzops/apm-node-cf-worker",
+  "name": "@senzops/apm-worker",
   "version": "1.0.0",
-  "description": "Cloudflare Worker APM SDK for Senzor",
+  "description": "Cloudflare Worker / Serverless APM SDK for Senzor",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -10,20 +10,21 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240101.0",
     "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=16.0.0"
   },
   "keywords": [
     "apm",
     "monitoring",
     "senzor",
-    "node",
-    "javascript",
-    "api",
+    "cloudflare",
+    "worker",
+    "serverless",
     "observability"
   ],
   "author": "Senzops",

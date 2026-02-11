@@ -1,47 +1,41 @@
-import { SenzorOptions } from './types';
+import { SenzorOptions, TraceData } from './types';
 
 export class Transport {
-  private queue: any[] = [];
-  private timer: NodeJS.Timeout | null = null;
+  private queue: TraceData[] = [];
 
-  constructor(private config: SenzorOptions) {
-    if (typeof setInterval !== 'undefined') {
-      this.timer = setInterval(() => this.flush(), config.flushInterval || 10000);
-      if (this.timer && typeof this.timer.unref === 'function') {
-        this.timer.unref(); // Don't block process exit
-      }
-    }
-  }
+  constructor(private config: SenzorOptions) { }
 
-  public add(trace: any) {
+  public add(trace: TraceData) {
     this.queue.push(trace);
-    if (this.queue.length >= (this.config.batchSize || 100)) {
-      this.flush();
-    }
   }
 
-  public async flush() {
+  /**
+   * Flushes the queue to the API. 
+   * Returns a promise that should be passed to ctx.waitUntil()
+   */
+  public async flush(): Promise<void> {
     if (this.queue.length === 0) return;
 
     const batch = [...this.queue];
-    this.queue = [];
+    this.queue = []; // Clear immediately
 
     try {
-      // Use global fetch (Node 18+)
-      await fetch(this.config.endpoint || 'https://api.senzor.dev/api/ingest/apm', {
+      const endpoint = this.config.endpoint || 'https://api.senzor.dev/api/ingest/apm';
+
+      await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-service-api-key': this.config.apiKey,
         },
         body: JSON.stringify(batch),
+        // keepalive is not strictly necessary in workers if awaited/waitUntil'd, but good practice
         keepalive: true,
       });
-      
+
       if (this.config.debug) console.log(`[Senzor] Flushed ${batch.length} traces`);
     } catch (err) {
       if (this.config.debug) console.error('[Senzor] Ingestion Error:', err);
-      // Dropping data to prevent memory leaks is preferred in APM
     }
   }
 }

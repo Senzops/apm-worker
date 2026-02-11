@@ -1,48 +1,102 @@
-# **@senzops/apm-node**
+# **@senzops/apm-worker**
 
-The official Node.js SDK for **Senzor APM**.
+The official Serverless & Worker SDK for **Senzor APM**.
 
-A lightweight, zero-dependency, and universal APM client for modern JavaScript runtimes.
+Designed specifically for **Cloudflare Workers**, **Cloudflare Pages**, and modern Edge runtimes.
 
 ## **✨ Features**
 
-* **Universal Support:** Works in Node.js (18+), Edge, and Serverless environments.  
-* **Auto-Instrumentation:** Automatically captures HTTP calls (Axios/Fetch).  
-* **Framework Agnostic:** Built-in wrappers for Express, Next.js, Fastify, and Nuxt (Nitro).  
-* **Distributed Tracing:** Captures full waterfall execution graphs (Spans).  
-* **Zero Overhead:** Uses async_hooks and non-blocking transports.
+- **Zero-Config Auto-Instrumentation:** Automatically captures all global `fetch` calls.
+- **Context Propagation:** Uses `AsyncLocalStorage` (via `nodejs_compat`) to track requests across async boundaries without manual passing.
+- **Lightweight:** < 5KB gzip, zero external dependencies.
+- **Non-Blocking:** Uses `ctx.waitUntil` to flush data without adding latency to user responses.
+- **W3C Trace Context:** Automatically injects `traceparent` headers into outgoing requests for distributed tracing.
 
 ## **📦 Installation**
+
 ```sh
-npm install @senzops/apm-node  
-# or  
-yarn add @senzops/apm-node
+npm install @senzops/apm-worker
 ```
-## **🚀 Quick Start (Express.js)**
 
-Add Senzor as the **first middleware** in your app.
-```js
-const express = require('express');  
-const Senzor = require('@senzops/apm-node');
+## **🚀 Quick Start (Cloudflare Workers)**
 
-const app = express();
+### **1. Enable Node Compatibility**
 
-// 1. Initialize  
-Senzor.init({  
-  apiKey: "sz_apm_...", // Get from Senzor Dashboard  
+Add the `nodejs_compat` flag to your `wrangler.toml`. This is **required** for the SDK to track context across async `fetch` calls.
+
+```toml
+# wrangler.toml
+compatibility_flags = [ "nodejs_compat" ]
+compatibility_date = "2024-09-23"
+```
+
+### **2. Integrate the SDK**
+
+Initialize Senzor in the global scope and wrap your `fetch` handler.
+
+```typescript
+import Senzor from "@senzops/apm-worker";
+
+// 1. Initialize (Global Scope)
+// Tip: You can also initialize inside the handler if you need to use `env.API_KEY`
+Senzor.init({
+  apiKey: "sz_apm_...",
 });
 
-// 2. Attach Request Handler  
-app.use(Senzor.requestHandler());
+export default {
+  // 2. Wrap the fetch handler
+  fetch: Senzor.worker(async (request, env, ctx) => {
+    // ✅ This fetch is AUTOMATICALLY traced!
+    // It will appear as a child span in the waterfall.
+    const user = await fetch("https://api.example.com/user/1");
 
-// ... your routes ...  
-app.get('/', async (req, res) => {  
-  // Database calls here are automatically traced\!  
-  res.json({ hello: 'world' });  
-});
+    // ✅ Manual spans are also easy (and automatically nested)
+    const dbSpan = Senzor.startSpan("database_query", "db");
+    // await db.query(...)
+    dbSpan.end();
 
-app.listen(3000);
+    return new Response("Hello World!");
+  }),
+};
 ```
-## **📚 Documentation**
 
-For detailed usage with **Next.js**, **NestJS**, **Fastify**, or **Manual Instrumentation**, please read our [**Detailed Wiki**](./wiki.md).
+## **📋 Production Checklist**
+
+### **1. Environment Variables**
+
+For security, do not commit your API key.
+
+1. Run `npx wrangler secret put SENZOR_API_KEY`.
+2. Update your worker to initialize lazily:
+
+```typescript
+import Senzor from "@senzops/apm-worker";
+
+letisInitialized = false;
+
+export default {
+  fetch: Senzor.worker(async (request, env, ctx) => {
+    // Lazy Init with Environment Variable
+    if (!isInitialized) {
+      Senzor.init({ apiKey: env.SENZOR_API_KEY });
+      isInitialized = true;
+    }
+
+    return new Response("OK");
+  }),
+};
+```
+
+### **2. Distributed Tracing**
+
+If your Worker calls other services (like a backend API), this SDK automatically adds the `traceparent` header.
+Ensure your backend services (Node.js, Python, Go) are configured to extract this header to see a connected trace from Edge -> Backend.
+
+### **3. Error Tracking**
+
+Any uncaught exception thrown in your handler is automatically captured, logged, and reported to Senzor with the stack trace.
+
+```typescript
+// This error will be reported automatically
+throw new Error("Something went wrong!");
+```
