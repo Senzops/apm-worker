@@ -4,7 +4,7 @@ import { enableFetchInstrumentation } from '../instrumentation/fetch';
 
 export class SenzorClient {
   private transport: Transport | null = null;
-  private options: SenzorOptions | null = null;
+  public options: SenzorOptions | null = null;
 
   public init(options: SenzorOptions) {
     if (!options.apiKey) {

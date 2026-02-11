@@ -1,6 +1,7 @@
 import { client } from './core/client';
 import { wrapWorker } from './wrappers/worker';
 import { wrapH3 } from './wrappers/h3';
+import { senzorPlugin, NitroApp } from './wrappers/nitro';
 import { SenzorOptions } from './core/types';
 
 const Senzor = {
@@ -12,17 +13,23 @@ const Senzor = {
 
   /**
    * Wrap your Cloudflare Worker 'fetch' handler.
-   * Inject trace controller as the 4th argument.
    */
   worker: wrapWorker,
 
   /**
-   * Wrap a Nitro/H3 event handler.
-   * Use this for Nuxt or pure Nitro server routes.
+   * Wrap a generic H3 event handler.
    */
-  nitro: wrapH3
+  wrapH3: wrapH3,
+
+  /**
+   * Nitro/Nuxt Plugin for global instrumentation.
+   * Usage: export default Senzor.nitroPlugin; in server/plugins/senzor.ts
+   */
+  nitroPlugin: senzorPlugin
 };
 
 export default Senzor;
 export { Senzor };
 export type { TraceController } from './core/types';
+// Re-export types that are used in public API signatures
+export type { NitroApp } from './wrappers/nitro';

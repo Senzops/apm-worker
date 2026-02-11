@@ -37,15 +37,12 @@ Initialize Senzor in the global scope and wrap your `fetch` handler.
 ```typescript
 import Senzor from "@senzops/apm-worker";
 
-// 1. Initialize (Global Scope)
 Senzor.init({
   apiKey: "sz_apm_...",
 });
 
 export default {
-  // 2. Wrap the fetch handler
   fetch: Senzor.worker(async (request, env, ctx) => {
-    // ... your code ...
     return new Response("Hello World!");
   }),
 };
@@ -55,51 +52,30 @@ export default {
 
 ## **⚡ Usage with Nitro / Nuxt**
 
-If you are using **Nitro** (standalone) or **Nuxt** deployed to Cloudflare Workers.
+For **Nitro** (standalone) or **Nuxt**, use a server plugin to instrument the entire application globally without wrapping individual handlers.
 
-### **1. Create a Server Plugin**
+### **1. Create a Plugin**
 
-Create a file at `server/plugins/senzor.ts`:
+Create `server/plugins/senzor.ts`:
 
 ```typescript
 import Senzor from "@senzops/apm-worker";
 
 export default defineNitroPlugin((nitroApp) => {
   // 1. Initialize
-  // Note: For Workers, 'env' vars might need runtime access or define replacement
+  // Use process.env or runtime config if available
   Senzor.init({
     apiKey: process.env.SENZOR_API_KEY || "sz_apm_...",
   });
 
-  // 2. Hook into request handling
-  nitroApp.hooks.hook("request", (event) => {
-    // Nitro hooks don't easily allow wrapping the entire execution context for AsyncLocalStorage yet.
-    // For full auto-instrumentation, consider wrapping specific event handlers or using the middleware approach below.
-  });
+  // 2. Register Global Instrumentation
+  Senzor.nitroPlugin(nitroApp);
 });
 ```
 
-### **Recommended: Wrap Event Handlers**
+### **2. Configuration**
 
-To ensure `fetch` auto-instrumentation works correctly with `AsyncLocalStorage`, wrap your event handlers.
-
-```typescript
-// server/api/hello.ts
-import Senzor from "@senzops/apm-worker";
-
-export default Senzor.nitro(
-  defineEventHandler(async (event) => {
-    // ✅ This fetch is automatically tracked
-    await fetch("https://google.com");
-
-    return { hello: "world" };
-  }),
-);
-```
-
-### **Configuration (nitro.config.ts)**
-
-Ensure you enable the node compatibility for Cloudflare.
+Ensure `nodejs_compat` is enabled in your `nitro.config.ts`:
 
 ```typescript
 // nitro.config.ts
@@ -111,6 +87,8 @@ export default defineNitroConfig({
   },
 });
 ```
+
+That's it! Every request to your Nitro app is now traced, and any `fetch` calls made within your API routes will automatically appear as spans in the trace.
 
 ---
 
