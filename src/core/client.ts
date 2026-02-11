@@ -3,8 +3,6 @@ import { Context } from './context';
 import { SenzorOptions, ActiveTrace } from './types';
 import { randomUUID } from 'crypto';
 import { instrumentHttp, instrumentFetch } from '../instrumentation/http'; // Import both
-import { instrumentMongo } from '../instrumentation/mongo';
-import { instrumentPg } from '../instrumentation/pg';
 
 export class SenzorClient {
   private transport: Transport | null = null;
@@ -29,11 +27,9 @@ export class SenzorClient {
     if (!this.isInstrumented) {
       try { instrumentHttp(endpoint, debug); } catch (e) { }
       try { instrumentFetch(endpoint, debug); } catch (e) { } // NEW: Fetch Support
-      try { instrumentMongo(debug); } catch (e) { }
-      try { instrumentPg(); } catch (e) { }
 
       this.isInstrumented = true;
-      if (debug) console.log('[Senzor] Auto-instrumentation enabled (HTTP, Fetch, Mongo)');
+      if (debug) console.log('[Senzor] Auto-instrumentation enabled (HTTP, Fetch)');
     }
   }
 

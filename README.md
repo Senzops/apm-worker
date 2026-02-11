@@ -7,7 +7,7 @@ A lightweight, zero-dependency, and universal APM client for modern JavaScript r
 ## **✨ Features**
 
 * **Universal Support:** Works in Node.js (18+), Edge, and Serverless environments.  
-* **Auto-Instrumentation:** Automatically captures HTTP calls (Axios/Fetch), MongoDB queries, and Postgres queries.  
+* **Auto-Instrumentation:** Automatically captures HTTP calls (Axios/Fetch).  
 * **Framework Agnostic:** Built-in wrappers for Express, Next.js, Fastify, and Nuxt (Nitro).  
 * **Distributed Tracing:** Captures full waterfall execution graphs (Spans).  
 * **Zero Overhead:** Uses async_hooks and non-blocking transports.
