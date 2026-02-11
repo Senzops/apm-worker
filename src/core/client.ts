@@ -1,6 +1,7 @@
 import { Transport } from './transport';
 import { SenzorOptions, TraceData, Span, TraceController } from './types';
 import { enableFetchInstrumentation } from '../instrumentation/fetch';
+import { instrumentHttp } from '../instrumentation/http';
 
 export class SenzorClient {
   private transport: Transport | null = null;
@@ -14,11 +15,18 @@ export class SenzorClient {
     this.options = options;
     this.transport = new Transport(options);
 
-    // Auto-instrument global fetch
+    // 1. Auto-instrument global fetch (Cloudflare / Browser / Node 18+)
     try {
       enableFetchInstrumentation();
     } catch (e) {
       if (options.debug) console.warn('[Senzor] Failed to instrument fetch:', e);
+    }
+
+    // 2. Auto-instrument http/https (Node.js / Axios / Node Compat)
+    try {
+      instrumentHttp();
+    } catch (e) {
+      if (options.debug) console.warn('[Senzor] Failed to instrument http:', e);
     }
 
     if (options.debug) console.log('[Senzor] Initialized for Serverless');
