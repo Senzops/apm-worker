@@ -1,6 +1,6 @@
 {
   "name": "@senzops/apm-worker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Cloudflare Worker / Serverless APM SDK for Senzor",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
