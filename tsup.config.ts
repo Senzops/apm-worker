@@ -8,4 +8,6 @@ export default defineConfig({
   minify: true,
   sourcemap: true,
   splitting: false,
+  // Ensure node built-ins are not polyfilled by tsup, letting the runtime provide them
+  external: ['node:async_hooks', 'node:crypto', 'cloudflare:sockets'],
 });
