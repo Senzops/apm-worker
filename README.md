@@ -2,7 +2,7 @@
 
 The official Serverless & Worker SDK for **Senzor APM**.
 
-Designed specifically for **Cloudflare Workers**, **Cloudflare Pages**, and modern Edge runtimes.
+Designed specifically for **Cloudflare Workers**, **Cloudflare Pages**, **Nitro**, and modern Edge runtimes.
 
 ## **✨ Features**
 
@@ -38,7 +38,6 @@ Initialize Senzor in the global scope and wrap your `fetch` handler.
 import Senzor from "@senzops/apm-worker";
 
 // 1. Initialize (Global Scope)
-// Tip: You can also initialize inside the handler if you need to use `env.API_KEY`
 Senzor.init({
   apiKey: "sz_apm_...",
 });
@@ -46,19 +45,74 @@ Senzor.init({
 export default {
   // 2. Wrap the fetch handler
   fetch: Senzor.worker(async (request, env, ctx) => {
-    // ✅ This fetch is AUTOMATICALLY traced!
-    // It will appear as a child span in the waterfall.
-    const user = await fetch("https://api.example.com/user/1");
-
-    // ✅ Manual spans are also easy (and automatically nested)
-    const dbSpan = Senzor.startSpan("database_query", "db");
-    // await db.query(...)
-    dbSpan.end();
-
+    // ... your code ...
     return new Response("Hello World!");
   }),
 };
 ```
+
+---
+
+## **⚡ Usage with Nitro / Nuxt**
+
+If you are using **Nitro** (standalone) or **Nuxt** deployed to Cloudflare Workers.
+
+### **1. Create a Server Plugin**
+
+Create a file at `server/plugins/senzor.ts`:
+
+```typescript
+import Senzor from "@senzops/apm-worker";
+
+export default defineNitroPlugin((nitroApp) => {
+  // 1. Initialize
+  // Note: For Workers, 'env' vars might need runtime access or define replacement
+  Senzor.init({
+    apiKey: process.env.SENZOR_API_KEY || "sz_apm_...",
+  });
+
+  // 2. Hook into request handling
+  nitroApp.hooks.hook("request", (event) => {
+    // Nitro hooks don't easily allow wrapping the entire execution context for AsyncLocalStorage yet.
+    // For full auto-instrumentation, consider wrapping specific event handlers or using the middleware approach below.
+  });
+});
+```
+
+### **Recommended: Wrap Event Handlers**
+
+To ensure `fetch` auto-instrumentation works correctly with `AsyncLocalStorage`, wrap your event handlers.
+
+```typescript
+// server/api/hello.ts
+import Senzor from "@senzops/apm-worker";
+
+export default Senzor.nitro(
+  defineEventHandler(async (event) => {
+    // ✅ This fetch is automatically tracked
+    await fetch("https://google.com");
+
+    return { hello: "world" };
+  }),
+);
+```
+
+### **Configuration (nitro.config.ts)**
+
+Ensure you enable the node compatibility for Cloudflare.
+
+```typescript
+// nitro.config.ts
+export default defineNitroConfig({
+  cloudflare: {
+    wrangler: {
+      compatibility_flags: ["nodejs_compat"],
+    },
+  },
+});
+```
+
+---
 
 ## **📋 Production Checklist**
 
@@ -67,25 +121,7 @@ export default {
 For security, do not commit your API key.
 
 1. Run `npx wrangler secret put SENZOR_API_KEY`.
-2. Update your worker to initialize lazily:
-
-```typescript
-import Senzor from "@senzops/apm-worker";
-
-letisInitialized = false;
-
-export default {
-  fetch: Senzor.worker(async (request, env, ctx) => {
-    // Lazy Init with Environment Variable
-    if (!isInitialized) {
-      Senzor.init({ apiKey: env.SENZOR_API_KEY });
-      isInitialized = true;
-    }
-
-    return new Response("OK");
-  }),
-};
-```
+2. Update your worker to initialize lazily or use build-time variables.
 
 ### **2. Distributed Tracing**
 
@@ -95,8 +131,3 @@ Ensure your backend services (Node.js, Python, Go) are configured to extract thi
 ### **3. Error Tracking**
 
 Any uncaught exception thrown in your handler is automatically captured, logged, and reported to Senzor with the stack trace.
-
-```typescript
-// This error will be reported automatically
-throw new Error("Something went wrong!");
-```
