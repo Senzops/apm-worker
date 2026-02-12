@@ -1,5 +1,7 @@
 import { storage } from '../core/context';
 
+declare const require: any;
+
 export const instrumentHttp = () => {
   try {
     // Use dynamic require to avoid build issues in pure ESM environments if not polyfilled.
@@ -96,4 +98,4 @@ export const instrumentHttp = () => {
 };
 
 // Also export a no-op for fetch since it's handled separately
-export const instrumentFetch = () => { }; 
+export const instrumentFetch = () => { };

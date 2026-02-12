@@ -69,7 +69,9 @@ export const senzorPlugin = (nitroApp: NitroApp) => {
         if (waitUntil && typeof waitUntil === 'function') {
           waitUntil(session.flush());
         } else {
-          session.flush().catch(() => { });
+          session.flush().catch(() => {
+            if (client.options?.debug) console.warn('[Senzor] Flush failed or context missing');
+          });
         }
       }
     });
