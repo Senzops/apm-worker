@@ -1,4 +1,4 @@
-import { storage } from '../core/context';
+import { getActiveController } from '../core/context';
 
 declare const require: any;
 
@@ -20,7 +20,7 @@ export const instrumentHttp = (ingestUrl: string, debug = false) => {
 
     const requestWrapper = (original: Function) => {
       return function (this: any, ...args: any[]) {
-        const controller = storage.getStore();
+        const controller = getActiveController();
         // If no context, skip instrumentation overhead
         if (!controller) {
           return original.apply(this, args);
@@ -51,7 +51,7 @@ export const instrumentHttp = (ingestUrl: string, debug = false) => {
         let hostname = 'unknown';
         try { hostname = new URL(urlStr).hostname; } catch (e) { hostname = options.hostname || 'unknown'; }
 
-        const spanName = `HTTP ${method} ${hostname}`;
+        const spanName = `${method} ${hostname}`;
         const span = controller.startSpan(spanName, 'http');
 
         // Inject Headers (Standard Node http/https options are mutable)
@@ -72,6 +72,7 @@ export const instrumentHttp = (ingestUrl: string, debug = false) => {
               url: urlStr,
               method,
               status: status,
+              library: 'http',
               error: errorMsg
             }, status);
           };
@@ -106,6 +107,6 @@ export const instrumentHttp = (ingestUrl: string, debug = false) => {
     }
 
   } catch (e) {
-    if (debug) console.warn('[Senzor] HTTP instrumentation skipped (module not found or require failed)');
+    if (debug) console.warn('[Senzor] instrumentation skipped (module not found or require failed)');
   }
 };

@@ -1,7 +1,7 @@
 import { client } from '../core/client';
 import { normalizePath } from '../core/normalizer';
 import { TraceController } from '../core/types';
-import { storage } from '../core/context';
+import { clearActiveController, setActiveController, storage } from '../core/context';
 
 type WorkerHandler = (request: Request, env: any, ctx: any, trace: TraceController) => Promise<Response>;
 
@@ -21,6 +21,7 @@ export const wrapWorker = (handler: WorkerHandler) => {
 
     // 4. Run Handler within Context (AsyncLocalStorage)
     // This enables the global fetch instrumentation to find the current trace controller
+    setActiveController(session.controller);
     return storage.run(session.controller, async () => {
       let response: Response;
       let status = 500;
@@ -36,6 +37,8 @@ export const wrapWorker = (handler: WorkerHandler) => {
       } finally {
         // 5. End Trace
         session.end(status, normalizePath(path));
+
+        clearActiveController();
 
         // 6. Flush (Async WaitUntil)
         if (ctx && typeof ctx.waitUntil === 'function') {

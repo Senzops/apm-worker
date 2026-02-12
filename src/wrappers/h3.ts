@@ -1,6 +1,6 @@
 import { client } from '../core/client';
 import { getRoute } from '../core/normalizer';
-import { storage } from '../core/context';
+import { clearActiveController, setActiveController, storage } from '../core/context';
 
 // Minimal types for H3 to avoid peer-deps
 type EventHandler = (event: any) => any;
@@ -20,6 +20,7 @@ export const wrapH3 = (handler: EventHandler) => {
 
     // 2. Run Handler within AsyncLocalStorage Context
     // This ensures global fetch() auto-instrumentation works inside Nitro handlers
+    setActiveController(session.controller);
     return storage.run(session.controller, async () => {
       let response: any;
       let status = 200;
@@ -39,6 +40,8 @@ export const wrapH3 = (handler: EventHandler) => {
       } finally {
         // 3. End Trace
         session.end(status, getRoute(event, path));
+        
+        clearActiveController();
 
         // 4. Flush Data (Non-blocking for Cloudflare)
         // Nitro exposes Cloudflare context in event.context.cloudflare

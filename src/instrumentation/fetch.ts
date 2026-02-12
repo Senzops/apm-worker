@@ -40,7 +40,7 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
     let hostname = 'unknown';
     try { hostname = new URL(urlStr).hostname; } catch (e) { }
 
-    const spanName = `HTTP ${method} ${hostname}`;
+    const spanName = `${method} ${hostname}`;
     if (debug) console.log(`[Senzor] Tracking Fetch: ${spanName}`);
 
     const span = controller.startSpan(spanName, 'http');
@@ -82,6 +82,7 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
       span.end({
         url: urlStr,
         method,
+        library: 'fetch',
         status: response.status
       }, response.status);
 
@@ -90,6 +91,7 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
       span.end({
         url: urlStr,
         method,
+        library: 'fetch',
         error: err.message
       }, 500);
       throw err;
