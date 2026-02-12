@@ -2,86 +2,87 @@ import { storage } from '../core/context';
 
 declare const require: any;
 
-export const instrumentHttp = () => {
+export const instrumentHttp = (ingestUrl: string, debug = false) => {
+  let ingestHost = '';
   try {
-    // Use dynamic require to avoid build issues in pure ESM environments if not polyfilled.
-    // In Cloudflare Workers with nodejs_compat, this works.
+    ingestHost = new URL(ingestUrl).hostname;
+  } catch (e) { }
+
+  try {
+    // Check if require exists (it might not in pure ESM/Workers)
+    if (typeof require === 'undefined') return;
+
+    // Dynamic require to avoid build errors
+    // @ts-ignore
     const http = require('http');
+    // @ts-ignore
     const https = require('https');
 
-    const patch = (module: any, protocol: string) => {
-      if (!module || !module.request) return;
-
-      const originalRequest = module.request;
-
-      // Override http.request / https.request
-      module.request = function (...args: any[]) {
+    const requestWrapper = (original: Function) => {
+      return function (this: any, ...args: any[]) {
         const controller = storage.getStore();
-
-        // If no active trace, skip instrumentation overhead
+        // If no context, skip instrumentation overhead
         if (!controller) {
-          return originalRequest.apply(this, args);
+          return original.apply(this, args);
         }
 
         let options: any = {};
-        let urlStr = 'unknown';
+        let urlStr = '';
 
-        // Signature 1: request(url, options?, callback?)
-        // Signature 2: request(options, callback?)
+        // Normalize arguments
+        // request(url, options, cb) OR request(options, cb)
         if (typeof args[0] === 'string' || args[0] instanceof URL) {
           urlStr = args[0].toString();
-          if (args[1] && typeof args[1] === 'object') {
-            options = args[1];
-          }
+          if (typeof args[1] === 'object' && args[1] !== null) options = args[1];
         } else {
           options = args[0] || {};
+          const protocol = options.protocol || (options.port === 443 ? 'https:' : 'http:');
           const host = options.hostname || options.host || 'localhost';
           const path = options.path || '/';
-          urlStr = `${options.protocol || protocol}//${host}${path}`;
+          urlStr = `${protocol}//${host}${path}`;
+        }
+
+        // Loop Guard
+        if (ingestHost && (urlStr.includes(ingestHost) || (options.hostname && options.hostname.includes(ingestHost)))) {
+          return original.apply(this, args);
         }
 
         const method = (options.method || 'GET').toUpperCase();
+        let hostname = 'unknown';
+        try { hostname = new URL(urlStr).hostname; } catch (e) { hostname = options.hostname || 'unknown'; }
 
-        // 1. Start Span
-        const span = controller.startSpan(`HTTP ${method}`, 'http');
+        const spanName = `HTTP ${method} ${hostname}`;
+        const span = controller.startSpan(spanName, 'http');
 
-        // 2. Inject Trace Headers
-        // Ensure options.headers exists
-        if (!options.headers) {
-          options.headers = {};
-        }
-
-        // Generate Trace Parent
-        const spanId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
-        const traceParent = `00-${controller.traceId}-${spanId}-01`;
-
-        // options.headers might be a primitive or null prototype object, handle safely
+        // Inject Headers (Standard Node http/https options are mutable)
         try {
+          if (!options.headers) options.headers = {};
+          const spanId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+          const traceParent = `00-${controller.traceId}-${spanId}-01`;
           options.headers['traceparent'] = traceParent;
-        } catch (e) {
-          // If headers is immutable or special, try creating a copy if possible (hard in args array)
-          // For now, assume mutable standard options object
-        }
+        } catch (e) { }
 
-        // 3. Call Original
-        const req = originalRequest.apply(this, args);
+        // Execute Request
+        const req = original.apply(this, args);
 
-        // 4. Listen for Response
+        // Hook Events
         if (req && typeof req.on === 'function') {
-          req.on('response', (res: any) => {
+          const endSpan = (status: number, errorMsg?: string) => {
             span.end({
               url: urlStr,
-              method: method,
-              status: res.statusCode
-            }, res.statusCode);
+              method,
+              status: status,
+              error: errorMsg
+            }, status);
+          };
+
+          req.on('response', (res: any) => {
+            res.once('end', () => endSpan(res.statusCode));
+            res.once('error', (err: any) => endSpan(500, err.message));
           });
 
           req.on('error', (err: any) => {
-            span.end({
-              url: urlStr,
-              method: method,
-              error: err.message
-            }, 500);
+            endSpan(500, err.message);
           });
         }
 
@@ -89,13 +90,22 @@ export const instrumentHttp = () => {
       };
     };
 
-    patch(http, 'http:');
-    patch(https, 'https:');
+    const shimmer = (module: any, method: string, wrapper: any) => {
+      if (module && module[method]) {
+        module[method] = wrapper(module[method]);
+      }
+    }
+
+    if (http) {
+      shimmer(http, 'request', requestWrapper);
+      shimmer(http, 'get', requestWrapper);
+    }
+    if (https) {
+      shimmer(https, 'request', requestWrapper);
+      shimmer(https, 'get', requestWrapper);
+    }
 
   } catch (e) {
-    // Ignore errors (e.g. 'http' module not found in pure edge runtime)
+    if (debug) console.warn('[Senzor] HTTP instrumentation skipped (module not found or require failed)');
   }
 };
-
-// Also export a no-op for fetch since it's handled separately
-export const instrumentFetch = () => { };

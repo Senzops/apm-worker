@@ -1,101 +1,86 @@
 import { storage } from '../core/context';
 
-const SZ_INSTRUMENTED = Symbol('sz_instrumented');
+export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => {
+  if (!globalThis.fetch) return;
 
-export const enableFetchInstrumentation = () => {
-  // 1. Prevent Double Instrumentation
-  if ((globalThis as any).fetch && (globalThis as any).fetch[SZ_INSTRUMENTED]) {
-    return;
-  }
+  // Prevent infinite loops by identifying our own ingest host
+  let ingestHost = '';
+  try { ingestHost = new URL(ingestUrl).hostname; } catch (e) { }
 
   const originalFetch = globalThis.fetch;
 
-  // 2. Create Patched Fetch
-  const patchedFetch = async function (this: any, input: RequestInfo | URL, init?: RequestInit) {
-    // 3. Check Context
+  // @ts-ignore
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    // 1. Extract URL
+    let urlStr = '';
+    if (typeof input === 'string') urlStr = input;
+    else if (input instanceof URL) urlStr = input.toString();
+    else if (input && typeof input === 'object') {
+      // Duck typing for Request object
+      if ('url' in input) urlStr = (input as Request).url;
+    }
+
+    // 2. Infinite Loop Guard
+    if (ingestHost && urlStr.includes(ingestHost)) {
+      return originalFetch.apply(globalThis, [input, init]);
+    }
+
+    // 3. Context Check
     const controller = storage.getStore();
-
-    // If no active trace, bypass instrumentation completely for performance
     if (!controller) {
-      return originalFetch.apply(this, [input, init]);
+      return originalFetch.apply(globalThis, [input, init]);
     }
 
-    // 4. Resolve Metadata
-    let url = 'unknown';
+    // 4. Start Span
     let method = 'GET';
+    if (init?.method) method = init.method;
+    else if (input instanceof Request) method = input.method;
+    method = method.toUpperCase();
 
-    try {
-      if (typeof input === 'string') {
-        url = input;
-      } else if (input instanceof URL) {
-        url = input.toString();
-      } else if (input && typeof input === 'object') {
-        // Duck typing for Request object
-        if ('url' in input) url = (input as Request).url;
-        if ('method' in input) method = (input as Request).method;
-      }
+    let hostname = 'unknown';
+    try { hostname = new URL(urlStr).hostname; } catch (e) { }
 
-      if (init && init.method) {
-        method = init.method;
-      }
-    } catch (e) {
-      // Ignore meta extraction failures
-    }
+    const spanName = `HTTP ${method} ${hostname}`;
+    if (debug) console.log(`[Senzor] Tracking Fetch: ${spanName}`);
 
-    // 5. Start Span
-    const span = controller.startSpan(`HTTP ${method.toUpperCase()}`, 'http');
+    const span = controller.startSpan(spanName, 'http');
 
-    // 6. Prepare Arguments (Header Injection)
-    let args: [RequestInfo | URL, RequestInit | undefined] = [input, init];
+    // Attempt to inject trace headers IF safe to do so
+    // In Cloudflare, modifying Request objects often requires cloning which can fail if body is used.
+    // We prioritize keeping the application working over distributed tracing if complexity is high.
+    let finalInput = input;
+    let finalInit = init;
 
     try {
       const spanId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
       const traceParent = `00-${controller.traceId}-${spanId}-01`;
 
-      if (input instanceof Request) {
-        // Handle Request Object
-        if (!input.bodyUsed) {
-          // Creating a new Request is the only way to modify headers safely
-          // We must be careful to preserve Cloudflare specific properties like 'cf' if they exist on the input
-          const reqHeaders = new Headers(input.headers);
-          reqHeaders.set('traceparent', traceParent);
-
-          // Clone init options from input if needed, but new Request(input) handles most
-          // We specifically merge the new headers
-          const newRequestInit: RequestInit = {
-            ...init,
-            headers: reqHeaders,
-          };
-
-          // Try to preserve 'cf' context if it exists on the original request
-          const originalCf = (input as any).cf;
-          if (originalCf) {
-            (newRequestInit as any).cf = originalCf;
-          }
-
-          args[0] = new Request(input, newRequestInit);
-          args[1] = undefined; // Init merged into Request
+      if (typeof input === 'string' || input instanceof URL) {
+        // Safe to modify init for strings
+        finalInit = { ...init };
+        if (!finalInit.headers) finalInit.headers = {};
+        // Handle different header formats
+        if (finalInit.headers instanceof Headers) {
+          finalInit.headers.set('traceparent', traceParent);
+        } else if (Array.isArray(finalInit.headers)) {
+          finalInit.headers.push(['traceparent', traceParent]);
+        } else {
+          (finalInit.headers as Record<string, string>)['traceparent'] = traceParent;
         }
-      } else {
-        // Handle String/URL
-        const headers = new Headers(init?.headers);
-        headers.set('traceparent', traceParent);
-
-        args[1] = {
-          ...init,
-          headers
-        };
       }
+      // NOTE: We intentionally SKIP Request object injection here to prevent the "Request body used" errors 
+      // that often break Cloudflare Workers. If user provided a Request object, we assume they handle it.
     } catch (e) {
-      // If injection fails (e.g. immutable headers), proceed with original args
+      // Ignore injection errors
     }
 
-    // 7. Execute Fetch
     try {
-      const response = await originalFetch.apply(this, args);
+      // Use apply to preserve context, pass original args if injection wasn't trivial
+      const response = await originalFetch.apply(globalThis, [finalInput, finalInit]);
 
+      // 5. End Span
       span.end({
-        url,
+        url: urlStr,
         method,
         status: response.status
       }, response.status);
@@ -103,17 +88,13 @@ export const enableFetchInstrumentation = () => {
       return response;
     } catch (err: any) {
       span.end({
-        url,
+        url: urlStr,
         method,
         error: err.message
       }, 500);
       throw err;
     }
   };
-
-  // Mark as instrumented
-  (patchedFetch as any)[SZ_INSTRUMENTED] = true;
-  globalThis.fetch = patchedFetch;
 };
 
 // No-op for legacy imports

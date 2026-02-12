@@ -14,17 +14,20 @@ export class SenzorClient {
     }
     this.options = options;
     this.transport = new Transport(options);
+    
+    // Default endpoint
+    const ingestUrl = options.endpoint || 'https://api.senzor.dev/api/ingest/apm';
 
     // 1. Auto-instrument global fetch (Cloudflare / Browser / Node 18+)
     try {
-      enableFetchInstrumentation();
+      enableFetchInstrumentation(ingestUrl, options.debug);
     } catch (e) {
       if (options.debug) console.warn('[Senzor] Failed to instrument fetch:', e);
     }
 
     // 2. Auto-instrument http/https (Node.js / Axios / Node Compat)
     try {
-      instrumentHttp();
+      instrumentHttp(ingestUrl, options.debug);
     } catch (e) {
       if (options.debug) console.warn('[Senzor] Failed to instrument http:', e);
     }
@@ -39,13 +42,13 @@ export class SenzorClient {
     if (!this.transport) {
       // Return dummy if not initialized
       return {
-        controller: {
-          startSpan: () => ({ end: () => { } }),
-          captureException: () => { },
+        controller: { 
+          startSpan: () => ({ end: () => {} }), 
+          captureException: () => {},
           traceId: '00000000000000000000000000000000'
         },
-        end: () => { },
-        flush: async () => { }
+        end: () => {},
+        flush: async () => {}
       };
     }
 
@@ -114,7 +117,7 @@ export class SenzorClient {
    */
   public track(data: Partial<TraceData> & { status: number, duration: number, route: string }) {
     if (!this.transport) return;
-
+    
     const payload: TraceData = {
       traceId: crypto.randomUUID(),
       method: data.method || 'GET',
@@ -129,12 +132,12 @@ export class SenzorClient {
     };
 
     this.transport.add(payload);
-    this.transport.flush().catch(() => { });
+    this.transport.flush().catch(() => {});
   }
 
   // Stubs for legacy Node support
   public startTrace<T>(data: Partial<TraceData>, callback: () => T): T { return callback(); }
-  public endTrace(status: number, data?: { route?: string }) { }
+  public endTrace(status: number, data?: { route?: string }) {}
 }
 
 export const client = new SenzorClient();
