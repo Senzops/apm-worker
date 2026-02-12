@@ -1,6 +1,6 @@
 import { client } from '../core/client';
 import { getRoute } from '../core/normalizer';
-import { storage } from '../core/context';
+import { clearActiveController, setActiveController, storage } from '../core/context';
 
 // Type definitions for NitroApp to avoid heavy dependencies
 export interface NitroApp {
@@ -41,6 +41,7 @@ export const senzorPlugin = (nitroApp: NitroApp) => {
     });
 
     // 2. Run execution inside AsyncLocalStorage context
+    setActiveController(session.controller);
     return storage.run(session.controller, async () => {
       let response;
       let status = 200;
@@ -60,6 +61,8 @@ export const senzorPlugin = (nitroApp: NitroApp) => {
       } finally {
         // 3. End Trace
         session.end(status, getRoute(event, path));
+
+        clearActiveController();
 
         // 4. Flush (Non-blocking)
         // Check for Cloudflare context in various locations

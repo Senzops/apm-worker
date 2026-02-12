@@ -1,4 +1,4 @@
-import { storage } from '../core/context';
+import { getActiveController } from '../core/context';
 
 export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => {
   if (!globalThis.fetch) return;
@@ -26,7 +26,7 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
     }
 
     // 3. Context Check
-    const controller = storage.getStore();
+    const controller = getActiveController();
     if (!controller) {
       return originalFetch.apply(globalThis, [input, init]);
     }

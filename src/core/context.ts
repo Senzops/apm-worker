@@ -52,3 +52,37 @@ const getStorage = (): IStore => {
 };
 
 export const storage = getStorage();
+
+const EDGE_CONTROLLER_KEY = '__SENZOR_EDGE_CONTROLLER__';
+
+const isEdgeRuntime = () => {
+  return (
+    typeof navigator !== 'undefined' &&
+    navigator.userAgent?.includes('Cloudflare')
+  );
+};
+
+export const setActiveController = (controller: any) => {
+  if (isEdgeRuntime()) {
+    (globalThis as any)[EDGE_CONTROLLER_KEY] = controller;
+  }
+};
+
+export const clearActiveController = () => {
+  if (isEdgeRuntime()) {
+    delete (globalThis as any)[EDGE_CONTROLLER_KEY];
+  }
+};
+
+export const getActiveController = () => {
+  // 1️⃣ Try AsyncLocalStorage first
+  const store = storage.getStore?.();
+  if (store) return store;
+
+  // 2️⃣ Fallback for Edge
+  if (isEdgeRuntime()) {
+    return (globalThis as any)[EDGE_CONTROLLER_KEY];
+  }
+
+  return undefined;
+};
