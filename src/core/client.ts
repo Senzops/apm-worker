@@ -131,11 +131,23 @@ export class SenzorClient {
   /**
    * Track a single request trace immediately.
    */
-  public track(data: Partial<TraceData> & { status: number, duration: number, route: string }) {
+  public track(data: Partial<TraceData> & { headers?: any } & { status: number, duration: number, route: string }) {
     if (!this.transport) return;
+
+    // Check for Distributed Tracing Headers
+    let parentTraceId = undefined;
+    let parentSpanId = undefined;
+
+    if (data.headers) {
+      // Handle various casing
+      parentTraceId = data.headers['x-senzor-trace-id'] || data.headers['X-SENZOR-TRACE-ID'];
+      parentSpanId = data.headers['x-senzor-parent-span-id'] || data.headers['X-SENZOR-PARENT-SPAN-ID'];
+    }
 
     const payload: TraceData = {
       traceId: crypto.randomUUID(),
+      parentTraceId: parentTraceId,
+      parentSpanId: parentSpanId,
       method: data.method || 'GET',
       route: data.route,
       path: data.path || '/',

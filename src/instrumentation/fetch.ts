@@ -70,7 +70,6 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
 
       // 5. End Span
       span.end({
-        spanId,
         url: urlStr,
         method,
         library: 'fetch',
@@ -80,7 +79,6 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
       return response;
     } catch (err: any) {
       span.end({
-        spanId,
         url: urlStr,
         method,
         library: 'fetch',

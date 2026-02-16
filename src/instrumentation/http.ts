@@ -67,7 +67,6 @@ export const instrumentHttp = (ingestUrl: string, debug = false) => {
         if (req && typeof req.on === 'function') {
           const endSpan = (status: number, errorMsg?: string) => {
             span.end({
-              spanId,
               url: urlStr,
               method,
               status: status,
