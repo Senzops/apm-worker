@@ -5,6 +5,7 @@ export interface SenzorOptions {
 }
 
 export interface Span {
+  spanId: string;
   name: string;
   type: 'db' | 'http' | 'function' | 'custom';
   startTime: number; // Relative to trace start
@@ -15,6 +16,11 @@ export interface Span {
 
 export interface TraceData {
   traceId: string;
+
+  // Distributed Tracing Fields
+  parentTraceId?: string; // NEW
+  parentSpanId?: string;  // NEW
+
   method: string;
   route: string; // Normalized
   path: string;  // Raw

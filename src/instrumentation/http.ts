@@ -55,12 +55,10 @@ export const instrumentHttp = (ingestUrl: string, debug = false) => {
         const span = controller.startSpan(spanName, 'http');
 
         // Inject Headers (Standard Node http/https options are mutable)
-        try {
-          if (!options.headers) options.headers = {};
-          const spanId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
-          const traceParent = `00-${controller.traceId}-${spanId}-01`;
-          options.headers['traceparent'] = traceParent;
-        } catch (e) { }
+        const spanId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
+        if (!options.headers) options.headers = {};
+        options.headers['x-senzor-trace-id'] = controller.traceId;
+        options.headers['x-senzor-parent-span-id'] = spanId;
 
         // Execute Request
         const req = original.apply(this, args);
@@ -69,6 +67,7 @@ export const instrumentHttp = (ingestUrl: string, debug = false) => {
         if (req && typeof req.on === 'function') {
           const endSpan = (status: number, errorMsg?: string) => {
             span.end({
+              spanId,
               url: urlStr,
               method,
               status: status,

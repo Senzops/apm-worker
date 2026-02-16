@@ -16,6 +16,7 @@ export const wrapH3 = (handler: EventHandler) => {
       path: path,
       ip: req.headers['x-forwarded-for'] || req.socket?.remoteAddress || event.context?.cf?.connectingIp,
       userAgent: req.headers['user-agent'],
+      headers: req.headers 
     });
 
     // 2. Run Handler within AsyncLocalStorage Context

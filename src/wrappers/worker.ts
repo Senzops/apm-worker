@@ -16,7 +16,8 @@ export const wrapWorker = (handler: WorkerHandler) => {
       method: request.method,
       path: path,
       userAgent: request.headers.get('user-agent') || undefined,
-      ip: request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || undefined
+      ip: request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || undefined,
+      headers: request.headers
     });
 
     // 4. Run Handler within Context (AsyncLocalStorage)

@@ -36,6 +36,7 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
     if (init?.method) method = init.method;
     else if (input instanceof Request) method = input.method;
     method = method.toUpperCase();
+    const spanId = crypto.randomUUID();
 
     let hostname = 'unknown';
     try { hostname = new URL(urlStr).hostname; } catch (e) { }
@@ -45,41 +46,31 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
 
     const span = controller.startSpan(spanName, 'http');
 
-    // Attempt to inject trace headers IF safe to do so
-    // In Cloudflare, modifying Request objects often requires cloning which can fail if body is used.
-    // We prioritize keeping the application working over distributed tracing if complexity is high.
-    let finalInput = input;
-    let finalInit = init;
+    const newInit = { ...init };
+    if (!newInit.headers) {
+      newInit.headers = {};
+    }
 
-    try {
-      const spanId = crypto.randomUUID().replace(/-/g, '').substring(0, 16);
-      const traceParent = `00-${controller.traceId}-${spanId}-01`;
-
-      if (typeof input === 'string' || input instanceof URL) {
-        // Safe to modify init for strings
-        finalInit = { ...init };
-        if (!finalInit.headers) finalInit.headers = {};
-        // Handle different header formats
-        if (finalInit.headers instanceof Headers) {
-          finalInit.headers.set('traceparent', traceParent);
-        } else if (Array.isArray(finalInit.headers)) {
-          finalInit.headers.push(['traceparent', traceParent]);
-        } else {
-          (finalInit.headers as Record<string, string>)['traceparent'] = traceParent;
-        }
-      }
-      // NOTE: We intentionally SKIP Request object injection here to prevent the "Request body used" errors 
-      // that often break Cloudflare Workers. If user provided a Request object, we assume they handle it.
-    } catch (e) {
-      // Ignore injection errors
+    // Handle different Header formats (Headers object vs plain object)
+    if (newInit.headers instanceof Headers) {
+      newInit.headers.set('x-senzor-trace-id', controller.traceId);
+      newInit.headers.set('x-senzor-parent-span-id', spanId);
+    } else if (Array.isArray(newInit.headers)) {
+      newInit.headers.push(['x-senzor-trace-id', controller.traceId]);
+      newInit.headers.push(['x-senzor-parent-span-id', spanId]);
+    } else {
+      // Plain object
+      (newInit.headers as any)['x-senzor-trace-id'] = controller.traceId;
+      (newInit.headers as any)['x-senzor-parent-span-id'] = spanId;
     }
 
     try {
       // Use apply to preserve context, pass original args if injection wasn't trivial
-      const response = await originalFetch.apply(globalThis, [finalInput, finalInit]);
+      const response = await originalFetch.apply(globalThis, [input, newInit]);
 
       // 5. End Span
       span.end({
+        spanId,
         url: urlStr,
         method,
         library: 'fetch',
@@ -89,6 +80,7 @@ export const enableFetchInstrumentation = (ingestUrl: string, debug = false) => 
       return response;
     } catch (err: any) {
       span.end({
+        spanId,
         url: urlStr,
         method,
         library: 'fetch',
